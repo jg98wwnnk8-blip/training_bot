@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.0-cloud-ready - 2026-03-03
+
+### Added
+- Render Blueprint config (`render.yaml`) for:
+  - `workout-api` web service,
+  - `workout-bot` worker,
+  - free PostgreSQL instance.
+- Unit tests for database URL normalization in settings (`tests/unit/test_config.py`).
+
+### Changed
+- Added `asyncpg` dependency for PostgreSQL async runtime.
+- Added settings normalization for provider URLs:
+  - `postgres://...` -> `postgresql+asyncpg://...`
+  - `postgresql://...` -> `postgresql+asyncpg://...`
+- Updated backend README for cloud-first deploy flow (Render + Postgres + Vercel Mini App).
+
 ## v0.1.0-mvp - 2026-03-03
 
 ### Added

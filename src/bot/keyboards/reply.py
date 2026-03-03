@@ -1,5 +1,7 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types.web_app_info import WebAppInfo
 
+from core.config import settings
 
 START_WORKOUT = "➕ Записать тренировку"
 OPEN_MINI_APP = "📱 Открыть приложение"
@@ -20,7 +22,18 @@ def main_menu_keyboard(in_progress_title: str | None = None) -> ReplyKeyboardMar
     rows = [[KeyboardButton(text=START_WORKOUT)]]
     if in_progress_title:
         rows.append([KeyboardButton(text=f"{CONTINUE_PREFIX} '{in_progress_title}'")])
-    rows.extend([[KeyboardButton(text=OPEN_MINI_APP)], [KeyboardButton(text=SETTINGS)]])
+    if settings.webapp_url:
+        rows.append(
+            [
+                KeyboardButton(
+                    text=OPEN_MINI_APP,
+                    web_app=WebAppInfo(url=settings.webapp_url),
+                )
+            ]
+        )
+    else:
+        rows.append([KeyboardButton(text=OPEN_MINI_APP)])
+    rows.append([KeyboardButton(text=SETTINGS)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 

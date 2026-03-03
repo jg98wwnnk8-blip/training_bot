@@ -12,6 +12,7 @@ from bot.keyboards.reply import (
     workout_menu_keyboard,
 )
 from bot.states import CreateWorkout, WorkoutMenu
+from core.config import settings
 from db.repositories.users import upsert_user
 from db.repositories.workouts import create_workout, get_in_progress_workout
 from db.session import SessionLocal
@@ -89,7 +90,16 @@ async def continue_workout(message: Message, state: FSMContext) -> None:
 @router.message(F.text == OPEN_MINI_APP)
 async def open_mini_app_stub(message: Message) -> None:
     await _safe_delete_user_message(message)
-    await message.answer("Mini App скоро будет доступен. API-контракт уже подготовлен.")
+    if settings.webapp_url:
+        await message.answer(
+            f"Откройте Mini App кнопкой '{OPEN_MINI_APP}' в главном меню.\n"
+            f"Текущий URL: {settings.webapp_url}",
+        )
+        return
+    await message.answer(
+        "Mini App еще не настроен. "
+        "Добавьте WEBAPP_URL в .env и перезапустите бота."
+    )
 
 
 @router.message(F.text == SETTINGS)
@@ -100,5 +110,8 @@ async def open_settings(message: Message) -> None:
 
 @router.callback_query(F.data == "settings_back")
 async def settings_back(callback: CallbackQuery) -> None:
-    await callback.message.edit_text("Настройки пользовательского контента:", reply_markup=settings_keyboard())
+    await callback.message.edit_text(
+        "Настройки пользовательского контента:",
+        reply_markup=settings_keyboard(),
+    )
     await callback.answer()
