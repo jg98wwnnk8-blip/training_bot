@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     bot_token: str
     database_url: str = "sqlite+aiosqlite:///./workouts.db"
     webapp_url: str | None = None
+    webhook_base_url: str | None = None
+    webhook_path: str = "/telegram/webhook"
     api_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     webapp_auth_ttl_seconds: int = 900
     webapp_access_token_ttl_seconds: int = 900
@@ -25,6 +27,12 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.api_cors_origins.split(",") if origin.strip()]
+
+    @property
+    def webhook_url(self) -> str | None:
+        if not self.webhook_base_url:
+            return None
+        return f"{self.webhook_base_url.rstrip('/')}{self.webhook_path}"
 
 
 settings = Settings()

@@ -15,6 +15,7 @@
   - `postgres://...` -> `postgresql+asyncpg://...`
   - `postgresql://...` -> `postgresql+asyncpg://...`
 - Updated backend README for cloud-first deploy flow (Render + Postgres + Vercel Mini App).
+- Added webhook mode for Telegram bot inside `workout-api` (Render free plan compatible).
 
 ## v0.1.0-mvp - 2026-03-03
 

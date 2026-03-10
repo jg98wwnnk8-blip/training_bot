@@ -31,17 +31,18 @@ Endpoints:
 
 This repo includes `render.yaml` with:
 - PostgreSQL (`workout-postgres`)
-- Web service (`workout-api`)
-- Worker service (`workout-bot`)
+- Web service (`workout-api`) that hosts both API and Telegram webhook
 
 ### Deploy steps
 
 1. Push backend repo to GitHub.
 2. In Render, create a **Blueprint** and select this backend repo.
 3. Render will create DB + services from `render.yaml`.
-4. Set env vars in both services:
+4. Set env vars in `workout-api`:
    - `BOT_TOKEN=<telegram bot token>`
    - `WEBAPP_URL=https://<your-miniapp>.vercel.app` (set after Vercel deploy)
+   - `WEBHOOK_BASE_URL=https://<your-api>.onrender.com`
+   - `WEBHOOK_PATH=/telegram/webhook`
    - `API_CORS_ORIGINS=https://<your-miniapp>.vercel.app`
 5. Keep `DATABASE_URL` managed by Blueprint (`fromDatabase`).
 6. Deploy both services.
@@ -52,10 +53,7 @@ This repo includes `render.yaml` with:
 ```bash
 alembic upgrade head && uvicorn api.app:app --host 0.0.0.0 --port $PORT
 ```
-- Bot start:
-```bash
-alembic upgrade head && python -m bot.main
-```
+Telegram updates are handled via webhook on `workout-api`.
 
 ## Mini App integration env
 
@@ -64,6 +62,8 @@ alembic upgrade head && python -m bot.main
   - `postgresql+asyncpg://...` (cloud)
 - If provider gives `postgres://...`, config auto-converts to `postgresql+asyncpg://...`.
 - `WEBAPP_URL` controls Telegram `📱 Открыть приложение` button target.
+- `WEBHOOK_BASE_URL` controls Telegram webhook base URL.
+- `WEBHOOK_PATH` controls the webhook path (default `/telegram/webhook`).
 - `API_CORS_ORIGINS` must contain Vercel frontend origin.
 
 ## Local fallback (Cloudflare tunnel, optional)

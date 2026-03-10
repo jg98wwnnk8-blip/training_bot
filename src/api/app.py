@@ -11,13 +11,18 @@ from api.schemas import (
     WorkoutDetailResponse,
     WorkoutListResponse,
 )
+from aiogram.types import Update
+
+from bot.app import create_bot_and_dispatcher
 from core.config import settings
+from core.logging import setup_logging
 from db.repositories.catalog import get_filter_catalog
 from db.repositories.workouts import (
     get_workout_detail_payload,
     list_completed_workouts,
     search_completed_workouts,
 )
+from db.seed import seed_system_catalog
 from db.session import SessionLocal
 from services.webapp_auth import (
     WebAppAuthError,
@@ -34,6 +39,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+bot, dp = create_bot_and_dispatcher()
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    setup_logging(settings.log_level)
+    async with SessionLocal() as session:
+        await seed_system_catalog(session)
+    if settings.webhook_url:
+        await bot.set_webhook(settings.webhook_url, drop_pending_updates=True)
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    await bot.session.close()
+
+
+@app.post(settings.webhook_path)
+async def telegram_webhook(update: dict) -> dict:
+    update_obj = Update.model_validate(update)
+    await dp.feed_update(bot, update_obj)
+    return {"ok": True}
 
 
 @app.get("/health")
