@@ -11,7 +11,7 @@ from api.schemas import (
     WorkoutDetailResponse,
     WorkoutListResponse,
 )
-from aiogram.types import Update
+from aiogram.types import MenuButtonWebApp, Update, WebAppInfo
 
 import logging
 
@@ -56,6 +56,13 @@ async def on_startup() -> None:
             logger.exception("Seed catalog failed on startup")
     if settings.webhook_url:
         await bot.set_webhook(settings.webhook_url, drop_pending_updates=True)
+    if settings.webapp_url:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="Workout Mini App",
+                web_app=WebAppInfo(url=settings.webapp_url),
+            )
+        )
 
 
 @app.on_event("shutdown")
