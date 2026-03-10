@@ -1,8 +1,12 @@
+import logging
+
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Exercise, MuscleGroup
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_GROUPS: list[tuple[str, str, int]] = [
     ("Грудь", "🔴", 1),
@@ -28,7 +32,20 @@ DEFAULT_EXERCISES: dict[str, list[str]] = {
 
 
 async def seed_system_catalog(session: AsyncSession) -> None:
-    existing = await session.scalar(select(MuscleGroup.id).where(MuscleGroup.user_id.is_(None)).limit(1))
+    try:
+        await session.rollback()
+    except Exception:
+        # If connection is already clean, ignore.
+        pass
+
+    try:
+        existing = await session.scalar(
+            select(MuscleGroup.id).where(MuscleGroup.user_id.is_(None)).limit(1)
+        )
+    except SQLAlchemyError:
+        await session.rollback()
+        logger.exception("Failed to check seed state")
+        raise
     if existing:
         return
 
@@ -51,4 +68,13 @@ async def seed_system_catalog(session: AsyncSession) -> None:
                 )
             )
 
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Likely concurrent seed. Safe to ignore.
+        await session.rollback()
+        return
+    except SQLAlchemyError:
+        await session.rollback()
+        logger.exception("Failed to seed system catalog")
+        raise

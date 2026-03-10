@@ -13,6 +13,8 @@ from api.schemas import (
 )
 from aiogram.types import Update
 
+import logging
+
 from bot.app import create_bot_and_dispatcher
 from core.config import settings
 from core.logging import setup_logging
@@ -40,6 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+logger = logging.getLogger(__name__)
 bot, dp = create_bot_and_dispatcher()
 
 
@@ -47,7 +50,10 @@ bot, dp = create_bot_and_dispatcher()
 async def on_startup() -> None:
     setup_logging(settings.log_level)
     async with SessionLocal() as session:
-        await seed_system_catalog(session)
+        try:
+            await seed_system_catalog(session)
+        except Exception:
+            logger.exception("Seed catalog failed on startup")
     if settings.webhook_url:
         await bot.set_webhook(settings.webhook_url, drop_pending_updates=True)
 
