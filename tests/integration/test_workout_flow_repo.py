@@ -12,6 +12,8 @@ from db.repositories.workouts import (
     create_workout,
     get_last_exercise_comment,
     get_last_exercise_result,
+    list_completed_workouts,
+    search_completed_workouts,
     get_workout_with_items,
 )
 
@@ -292,3 +294,87 @@ async def test_regression_orphan_sets_same_workout_exercise_id(session) -> None:
     assert len(loaded.exercises) == 1
     assert len(loaded.exercises[0].sets) == 1
     assert loaded.exercises[0].sets[0].set_number == 1
+
+
+@pytest.mark.asyncio
+async def test_list_completed_workouts_with_aggregates(session) -> None:  # type: ignore[no-untyped-def]
+    user_id = 1000
+    session.add(MuscleGroup(id=8, name="Спина", emoji="🔵", sort_order=1, is_custom=False))
+    session.add(Exercise(id=8, muscle_group_id=8, name="Тяга блока", is_custom=False))
+    await session.commit()
+
+    in_progress = await create_workout(session, user_id=user_id, title="In progress")
+    completed = await create_workout(session, user_id=user_id, title="Completed")
+    await complete_workout(session, user_id=user_id, workout_id=completed.id, comment="done")
+
+    await add_workout_exercise_with_sets(
+        session,
+        user_id=user_id,
+        workout_id=completed.id,
+        exercise_id=8,
+        exercise_name_snapshot="Тяга блока",
+        sets=[{"weight": 70.0, "reps": 10}, {"weight": 75.0, "reps": 8}],
+        comment=None,
+    )
+
+    items, total = await list_completed_workouts(session, user_id=user_id, limit=20, offset=0)
+    assert total == 1
+    assert len(items) == 1
+    assert items[0]["title"] == "Completed"
+    assert items[0]["exercise_count"] == 1
+    assert items[0]["total_volume"] == 1300.0
+
+    # keep variable used (in_progress was intentionally not completed)
+    assert in_progress.status == WorkoutStatus.IN_PROGRESS.value
+
+
+@pytest.mark.asyncio
+async def test_search_completed_workouts_by_exercise_and_period(session) -> None:  # type: ignore[no-untyped-def]
+    user_id = 1100
+    session.add(MuscleGroup(id=9, name="Грудь", emoji="🔴", sort_order=1, is_custom=False))
+    session.add(Exercise(id=9, muscle_group_id=9, name="Жим лёжа", is_custom=False))
+    session.add(Exercise(id=10, muscle_group_id=9, name="Разводка", is_custom=False))
+    await session.commit()
+
+    old_workout = Workout(
+        user_id=user_id,
+        title="Old chest",
+        status=WorkoutStatus.COMPLETED.value,
+        date_utc=datetime.now(timezone.utc) - timedelta(days=120),
+    )
+    new_workout = Workout(
+        user_id=user_id,
+        title="New chest",
+        status=WorkoutStatus.COMPLETED.value,
+        date_utc=datetime.now(timezone.utc) - timedelta(days=5),
+    )
+    session.add_all([old_workout, new_workout])
+    await session.flush()
+
+    session.add_all(
+        [
+            WorkoutExercise(
+                workout_id=old_workout.id,
+                exercise_id=10,
+                exercise_name_snapshot="Разводка",
+                order=1,
+            ),
+            WorkoutExercise(
+                workout_id=new_workout.id,
+                exercise_id=9,
+                exercise_name_snapshot="Жим лёжа",
+                order=1,
+            ),
+        ]
+    )
+    await session.commit()
+
+    items, total = await search_completed_workouts(
+        session,
+        user_id=user_id,
+        exercise_id=9,
+        date_from=datetime.now(timezone.utc) - timedelta(days=90),
+    )
+    assert total == 1
+    assert len(items) == 1
+    assert items[0]["title"] == "New chest"

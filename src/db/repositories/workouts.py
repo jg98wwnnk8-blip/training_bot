@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Select, delete, func, select, update
+from sqlalchemy import Select, and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -232,3 +232,153 @@ async def get_last_exercise_result(
         "comment": item.comment,
         "sets": [{"set_number": s.set_number, "weight": s.weight, "reps": s.reps} for s in sets],
     }
+
+
+def _workout_aggregates_subquery():
+    return (
+        select(
+            WorkoutExercise.workout_id.label("workout_id"),
+            func.count(func.distinct(WorkoutExercise.id)).label("exercise_count"),
+            func.coalesce(func.sum(SetEntry.weight * SetEntry.reps), 0.0).label("total_volume"),
+        )
+        .select_from(WorkoutExercise)
+        .outerjoin(SetEntry, SetEntry.workout_exercise_id == WorkoutExercise.id)
+        .group_by(WorkoutExercise.workout_id)
+        .subquery()
+    )
+
+
+async def list_completed_workouts(
+    session: AsyncSession,
+    user_id: int,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    aggregates = _workout_aggregates_subquery()
+    total_stmt = select(func.count(Workout.id)).where(
+        Workout.user_id == user_id,
+        Workout.status == WorkoutStatus.COMPLETED.value,
+    )
+    total = int(await session.scalar(total_stmt) or 0)
+
+    rows = await session.execute(
+        select(
+            Workout.id,
+            Workout.title,
+            Workout.date_utc,
+            Workout.comment,
+            func.coalesce(aggregates.c.exercise_count, 0),
+            func.coalesce(aggregates.c.total_volume, 0.0),
+        )
+        .outerjoin(aggregates, aggregates.c.workout_id == Workout.id)
+        .where(Workout.user_id == user_id, Workout.status == WorkoutStatus.COMPLETED.value)
+        .order_by(Workout.date_utc.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    items = [
+        {
+            "id": row[0],
+            "title": row[1],
+            "date_utc": row[2].isoformat() if row[2] else "",
+            "comment": row[3],
+            "exercise_count": int(row[4] or 0),
+            "total_volume": float(row[5] or 0.0),
+        }
+        for row in rows.all()
+    ]
+    return items, total
+
+
+async def get_workout_detail_payload(
+    session: AsyncSession, user_id: int, workout_id: int
+) -> dict | None:
+    workout = await get_workout_with_items(session, user_id, workout_id)
+    if workout is None:
+        return None
+
+    exercises = []
+    for item in sorted(workout.exercises, key=lambda x: x.order):
+        item_sets = sorted(item.sets, key=lambda s: s.set_number)
+        exercises.append(
+            {
+                "workout_exercise_id": item.id,
+                "exercise_id": item.exercise_id,
+                "exercise_name": item.exercise_name_snapshot,
+                "comment": item.comment,
+                "sets": [
+                    {"set_number": s.set_number, "weight": s.weight, "reps": s.reps}
+                    for s in item_sets
+                ],
+            }
+        )
+
+    return {
+        "id": workout.id,
+        "title": workout.title,
+        "date_utc": workout.date_utc.isoformat(),
+        "comment": workout.comment,
+        "status": workout.status,
+        "exercises": exercises,
+    }
+
+
+async def search_completed_workouts(
+    session: AsyncSession,
+    user_id: int,
+    muscle_group_id: int | None = None,
+    exercise_id: int | None = None,
+    date_from: datetime | None = None,
+) -> tuple[list[dict], int]:
+    aggregates = _workout_aggregates_subquery()
+
+    conditions = [
+        Workout.user_id == user_id,
+        Workout.status == WorkoutStatus.COMPLETED.value,
+    ]
+    if date_from is not None:
+        conditions.append(Workout.date_utc >= date_from)
+
+    if muscle_group_id is not None:
+        conditions.append(
+            Workout.exercises.any(
+                WorkoutExercise.exercise_id.in_(
+                    select(Exercise.id).where(Exercise.muscle_group_id == muscle_group_id)
+                )
+            )
+        )
+    if exercise_id is not None:
+        conditions.append(Workout.exercises.any(WorkoutExercise.exercise_id == exercise_id))
+
+    base = select(Workout.id).where(and_(*conditions)).subquery()
+
+    total_stmt = select(func.count()).select_from(base)
+    total = int(await session.scalar(total_stmt) or 0)
+
+    rows = await session.execute(
+        select(
+            Workout.id,
+            Workout.title,
+            Workout.date_utc,
+            Workout.comment,
+            func.coalesce(aggregates.c.exercise_count, 0),
+            func.coalesce(aggregates.c.total_volume, 0.0),
+        )
+        .outerjoin(aggregates, aggregates.c.workout_id == Workout.id)
+        .where(Workout.id.in_(select(base.c.id)))
+        .order_by(Workout.date_utc.desc())
+    )
+
+    items = [
+        {
+            "id": row[0],
+            "title": row[1],
+            "date_utc": row[2].isoformat() if row[2] else "",
+            "comment": row[3],
+            "exercise_count": int(row[4] or 0),
+            "total_volume": float(row[5] or 0.0),
+        }
+        for row in rows.all()
+    ]
+    return items, total

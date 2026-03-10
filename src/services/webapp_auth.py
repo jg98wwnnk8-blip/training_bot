@@ -67,3 +67,27 @@ def issue_access_token(user_id: int, ttl_seconds: int, secret: str) -> str:
     payload_b64 = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     signature = hmac.new(secret.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
     return f"{payload_b64}.{signature}"
+
+
+def verify_access_token(token: str, secret: str) -> dict:
+    try:
+        payload_b64, signature = token.split(".", 1)
+    except ValueError as exc:
+        raise WebAppAuthError("Invalid token format") from exc
+
+    expected = hmac.new(secret.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise WebAppAuthError("Invalid token signature")
+
+    padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
+    except Exception as exc:  # noqa: BLE001
+        raise WebAppAuthError("Invalid token payload") from exc
+
+    exp = int(payload.get("exp", 0))
+    if exp <= int(time.time()):
+        raise WebAppAuthError("Token expired")
+    if "sub" not in payload:
+        raise WebAppAuthError("Token missing subject")
+    return payload
