@@ -159,3 +159,30 @@ async def get_custom_exercises_by_group(
         .order_by(Exercise.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def get_filter_catalog(session: AsyncSession, user_id: int) -> dict:
+    groups_result = await session.execute(
+        select(MuscleGroup)
+        .where(or_(MuscleGroup.user_id.is_(None), MuscleGroup.user_id == user_id))
+        .order_by(MuscleGroup.sort_order.asc(), MuscleGroup.name.asc())
+    )
+    groups = list(groups_result.scalars().all())
+
+    exercises_result = await session.execute(
+        select(Exercise)
+        .where(or_(Exercise.user_id.is_(None), Exercise.user_id == user_id))
+        .order_by(Exercise.name.asc())
+    )
+    exercises = list(exercises_result.scalars().all())
+
+    return {
+        "muscle_groups": [
+            {"id": g.id, "name": g.name, "emoji": g.emoji}
+            for g in groups
+        ],
+        "exercises": [
+            {"id": e.id, "muscle_group_id": e.muscle_group_id, "name": e.name}
+            for e in exercises
+        ],
+    }
